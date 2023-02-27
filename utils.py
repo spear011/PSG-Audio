@@ -3,6 +3,9 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import os
 import numpy as np
+import glob
+from pyedflib import highlevel
+import soundfile as sf
 
 class get_info:
 
@@ -132,3 +135,91 @@ class rml_to_concat_df():
             rml_df = rml_df_converter(rml_file_path).get_matched_df()
             concat_df = pd.concat([concat_df, rml_df], ignore_index=True)
         return concat_df
+    
+
+class get_mic_signals():
+
+    def __init__(self, folder_path):
+        self.folder_path = folder_path
+    
+    # make file path list in folder
+    def get_file_path_list(self):
+        file_list = os.listdir(self.folder_path)
+        file_path_list = []
+        for i in range(len(file_list)):
+            file_path_list.append(self.folder_path + '/' + file_list[i])
+        file_path_list.sort()
+        return file_path_list
+    
+    # extract mic_signal from one edf file
+    def extract_one_mic_signal(self, file_path):
+        signals = highlevel.read_edf(file_path)[0][-2]
+        return signals
+
+    # extract and concate mic_signal from all edf files
+    def extract_all_mic_signal(self):
+        file_path_list = self.get_file_path_list()
+        all_signals = np.array([])
+        for i in range(len(file_path_list)):
+            signals = self.extract_one_mic_signal(file_path_list[i])
+            all_signals = np.concatenate([all_signals, signals])
+        return all_signals
+
+
+class make_wav_df():
+
+    def __init__(self, data_path, df, sr):
+        self.data_path = data_path
+        self.df = df
+        self.sr = sr
+
+    def get_patient_id_list(self):
+        lists = os.listdir(self.data_path)
+        lists = [int(x) for x in lists]
+        lists.sort()
+        return lists
+
+    def get_current_df(self, patient_id):
+        df = self.df
+        current_df = df[df['patient_id'] == patient_id]
+        current_df = current_df.drop_duplicates(['stage_start_time', 'stage_end_time', 'stage_duration', 'stage_type'], keep='first').sort_values(by=['patient_id','stage_start_time']).reset_index(drop=True)
+        return current_df
+    
+    def get_current_mic_signal(self, patient_id):
+        data_path = self.data_path
+        mic_signal = get_mic_signals(data_path + str(patient_id).zfill(8)).extract_all_mic_signal()
+        return mic_signal
+
+    # segment signal by stage
+    def segment_one_signal_and_save(self, patient_id):
+        mic_signal = self.get_current_mic_signal(patient_id)
+        current_df = self.get_current_df(patient_id)
+        sr = self.sr
+        wav_folder = './data/wav/' + str(patient_id).zfill(8) + '/'
+
+        if not os.path.exists(wav_folder):
+            os.makedirs(wav_folder)
+
+        signal_list = []
+        wav_id_list = []
+        for i in range(len(current_df)):
+            start = int(current_df['stage_start_time'][i] * sr)
+            end = int(current_df['stage_end_time'][i] * sr)
+            signal_list.append(mic_signal[start:end])
+            sleep_hour = int(current_df['stage_start_time'][i] // 3600) + 1
+            sf.write(wav_folder + str(patient_id).zfill(8) + '_' + str(sleep_hour).zfill(2) + '_' + str(i).zfill(2) + '.wav', signal_list[i], sr)
+            wav_id_list.append(str(patient_id) + '_' + str(sleep_hour).zfill(2) + '_' + str(i).zfill(2))
+
+        current_wav_df = pd.concat([current_df, pd.DataFrame(wav_id_list, columns=['wav_id'])], axis=1)
+        return current_wav_df
+
+    # segment all signals and concat all df
+
+    def segment_all_signals_and_save(self):
+        patient_id_list = self.get_patient_id_list()
+        wav_df = pd.DataFrame(columns = ['patient_id', 'stage_start_time', 'stage_end_time', 'stage_duration', 'stage_type', 'wav_id'])
+        for i in range(len(patient_id_list)):
+            print('Segmenting...{}'.format(patient_id_list[i]))
+            current_wav_df = self.segment_one_signal_and_save(patient_id_list[i])
+            wav_df = pd.concat([wav_df, current_wav_df], ignore_index=True)
+        return wav_df
