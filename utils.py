@@ -166,7 +166,7 @@ class get_mic_signals():
         return all_signals
 
 
-class make_wav_df():
+class make_wav_files():
 
     def __init__(self, data_path, df, sr):
         self.data_path = data_path
@@ -192,10 +192,13 @@ class make_wav_df():
 
     # segment signal by stage
     def segment_one_signal_and_save(self, patient_id):
+        print('Getting wav files of patient {}...'.format(patient_id))
         mic_signal = self.get_current_mic_signal(patient_id)
+        print('Getting mic signal completed. Getting current df...')
         current_df = self.get_current_df(patient_id)
+        print('Getting current df completed.')
         sr = self.sr
-        wav_folder = './data/wav/' + str(patient_id).zfill(8) + '/'
+        wav_folder = self.data_path + 'wav/' + str(patient_id).zfill(8) + '/'
 
         if not os.path.exists(wav_folder):
             os.makedirs(wav_folder)
@@ -209,8 +212,10 @@ class make_wav_df():
             sleep_hour = int(current_df['stage_start_time'][i] // 3600) + 1
             sf.write(wav_folder + str(patient_id).zfill(8) + '_' + str(sleep_hour).zfill(2) + '_' + str(i).zfill(2) + '.wav', signal_list[i], sr)
             wav_id_list.append(str(patient_id) + '_' + str(sleep_hour).zfill(2) + '_' + str(i).zfill(2))
+            print('Patient {} stage {} saved.'.format(patient_id, i))
 
         current_wav_df = pd.concat([current_df, pd.DataFrame(wav_id_list, columns=['wav_id'])], axis=1)
+        print('Patient {} completed.'.format(patient_id))
         return current_wav_df
 
     # segment all signals and concat all df
@@ -219,7 +224,8 @@ class make_wav_df():
         patient_id_list = self.get_patient_id_list()
         wav_df = pd.DataFrame(columns = ['patient_id', 'stage_start_time', 'stage_end_time', 'stage_duration', 'stage_type', 'wav_id'])
         for i in range(len(patient_id_list)):
-            print('Segmenting...{}'.format(patient_id_list[i]))
             current_wav_df = self.segment_one_signal_and_save(patient_id_list[i])
+            print('remaining {} patients.'.format(len(patient_id_list) - i - 1))
             wav_df = pd.concat([wav_df, current_wav_df], ignore_index=True)
+        print('All patients completed.')
         return wav_df
