@@ -229,3 +229,59 @@ class make_wav_files():
             wav_df = pd.concat([wav_df, current_wav_df], ignore_index=True)
         print('All patients completed.')
         return wav_df
+
+class make_sliced_wav():
+
+    def __init__(self, data_path, save_path, frame_size, overlap):
+        self.data_path = data_path
+        self.frame_size = frame_size
+        self.overlap = overlap
+        self.save_path = save_path
+
+    def get_patient_id_list(self):
+        patient_id_list = []
+        for folder in os.listdir(self.data_path):
+            patient_id_list.append(folder)
+        return patient_id_list
+    
+    def get_wav_files_list(self, patient_id):
+        wav_file_list = []
+        for wav_file in glob.glob(self.data_path + patient_id + '/*.wav'):
+            wav_file_list.append(wav_file)
+        return wav_file_list
+    
+    def get_wav_file_name(self, wav_file_path):   
+        return wav_file_path.split('\\')[-1].split('.')[0]
+    
+    def segment_wav_file(self):
+        frame_size = self.frame_size
+        overlap = self.overlap
+        save_path = self.save_path
+        patient_id_list = self.get_patient_id_list()
+        sliced_wav_file_list = []
+        print('Getting patient id list completed. {} patients found.'.format(len(patient_id_list)))
+        for patient_id in patient_id_list:
+            print('Segmenting patient {}...'.format(patient_id))
+            wav_file_list = self.get_wav_files_list(patient_id)
+            save_dir = save_path + patient_id
+            
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+
+            print('Saving sliced wav files to {}...'.format(save_dir))
+            for wav_file in wav_file_list:
+                wav_file_name = self.get_wav_file_name(wav_file)
+                y, sr = sf.read(wav_file)
+                file_number = 0
+                for i in range(0, len(y), overlap*sr):
+                    if len(y[i:i+frame_size*sr]) == frame_size*sr:
+                        sf.write(save_dir + '/' + str(wav_file_name) + '_' + str(file_number).zfill(3) + '.wav', y[i:i+frame_size*sr], sr)
+                        sliced_wav_file_list.append(save_dir + '/' + str(wav_file_name) + '_' + str(file_number).zfill(3) + '.wav')
+                        file_number += 1
+                    else:
+                        sf.write(save_dir + '/' + str(wav_file_name) + '_' + str(file_number).zfill(3) + '.wav', y[i:], sr)
+                        sliced_wav_file_list.append(save_dir + '/' + str(wav_file_name) + '_' + str(file_number).zfill(3) + '.wav')
+                        break
+            print('Patient {} completed.'.format(patient_id))
+            print('Remaining {} patients.'.format(len(patient_id_list) - patient_id_list.index(patient_id) - 1))
+        return sliced_wav_file_list
